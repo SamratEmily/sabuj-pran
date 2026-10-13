@@ -63,6 +63,19 @@ make seed-demo                  # roles, users, master data + realistic demo bus
 | API docs (Swagger) | http://localhost:8000/docs |
 | Health | http://localhost:8000/api/v1/health |
 
+**Docker on macOS without Docker Desktop** (what this project is verified with):
+
+```bash
+brew install colima docker docker-compose docker-buildx
+colima start --cpu 4 --memory 6 --vm-type vz --mount-type virtiofs   # once per boot
+```
+
+Compose is a CLI plugin: `~/.docker/config.json` needs `"cliPluginsExtraDirs": ["/opt/homebrew/lib/docker/cli-plugins"]`. If Docker Desktop was uninstalled earlier, also remove its leftovers:
+- `"credsStore": "desktop"` and `"currentContext": "desktop-linux"` in that file;
+- broken links in `~/.docker/cli-plugins`.
+
+**Port clashes:** if MySQL already runs on your machine, set `MYSQL_HOST_PORT=3307` (any free port) in `.env`. Containers still talk to each other on 3306. Stop anything else on ports 8000 and 5173.
+
 `make seed` loads only the base data: roles, users, master data and demo approval rules. Both seeds are idempotent, so they're safe to run again.
 
 ### Demo logins

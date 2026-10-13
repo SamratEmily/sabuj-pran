@@ -1,0 +1,54 @@
+/* Print-friendly pages (e.g. party statements): only the content prints. */
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  .no-print,
+  .ant-layout-sider,
+  .ant-layout-header,
+  .ant-message,
+  .ant-notification {
+    display: none !important;
+  }
+  .print-only {
+    display: block;
+  }
+  body,
+  .ant-layout,
+  .ant-layout-content {
+    background: #fff !important;
+    margin: 0 !important;
+  }
+  .ant-layout-content > div {
+    padding: 0 !important;
+    border-radius: 0 !important;
+  }
+  .ant-table {
+    font-size: 11px;
+  }
+  .ant-table-thead > tr > th,
+  .ant-table-tbody > tr > td,
+  .ant-table-summary td {
+    padding: 4px 6px !important;
+  }
+  tr {
+    break-inside: avoid;
+  }
+  /* Wide tables (scroll-x on screen) must fit the page instead of being clipped. */
+  .ant-table-content,
+  .ant-table-body {
+    overflow: visible !important;
+  }
+  .ant-table-content > table,
+  .ant-table-body > table {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .ant-table-cell {
+    white-space: normal !important;
+  }
+}
