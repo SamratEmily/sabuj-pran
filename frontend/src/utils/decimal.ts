@@ -57,6 +57,25 @@ export function subtract(a: Decimalish, b: Decimalish, scale = 2): string {
   return toDecimalString(rescale(x - y, WORK_SCALE, scale), scale);
 }
 
+/** value x numerator / denominator rounded half away from zero to `scale` places (exact,
+ *  e.g. a proportional discount share). Empty inputs count as 0; a zero denominator gives 0. */
+export function ratio(value: Decimalish, numerator: Decimalish, denominator: Decimalish, scale = 2): string {
+  const x = parseDecimal(value, WORK_SCALE) ?? 0n;
+  const n = parseDecimal(numerator, WORK_SCALE) ?? 0n;
+  const d = parseDecimal(denominator, WORK_SCALE) ?? 0n;
+  if (d === 0n) return toDecimalString(0n, scale);
+  let top = x * n * pow10(scale);
+  let bottom = d * pow10(WORK_SCALE);
+  if (bottom < 0n) {
+    top = -top;
+    bottom = -bottom;
+  }
+  const negative = top < 0n;
+  const abs = negative ? -top : top;
+  const rounded = (abs + bottom / 2n) / bottom;
+  return toDecimalString(negative ? -rounded : rounded, scale);
+}
+
 /** Compare two decimals: -1, 0 or 1. */
 export function compare(a: Decimalish, b: Decimalish): number {
   const x = parseDecimal(a, WORK_SCALE) ?? 0n;

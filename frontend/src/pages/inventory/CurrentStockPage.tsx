@@ -1,4 +1,4 @@
-import { Flex, Input, Select, Switch, Table, Tag, Typography } from 'antd';
+import { Flex, Input, Select, Switch, Tag, Typography } from 'antd';
 import type { TableProps } from 'antd';
 import { useState } from 'react';
 import { Link } from 'react-router';
@@ -6,9 +6,9 @@ import { Link } from 'react-router';
 import { INVENTORY } from '../../api/inventory';
 import type { StockPage, StockRow } from '../../api/inventory';
 import { useLookups } from '../../api/master';
-import ErrorState from '../../components/ErrorState';
 import MoneyText from '../../components/MoneyText';
 import PageHeader from '../../components/PageHeader';
+import PagedTable from '../../components/PagedTable';
 import QtyText from '../../components/QtyText';
 import { useList } from '../../hooks/useApi';
 import { formatDecimal } from '../../utils/decimal';
@@ -119,32 +119,22 @@ export default function CurrentStockPage() {
           <span>Low stock only</span>
         </Flex>
       </Flex>
-      {list.isError && <ErrorState error={list.error} onRetry={() => list.refetch()} />}
-      <Table<StockRow>
+      <PagedTable<StockRow>
+        query={list}
         rowKey={(r) => `${r.product_id}-${r.warehouse_id}`}
-        size="middle"
         columns={columns}
-        dataSource={data?.items ?? []}
-        loading={list.isFetching}
-        scroll={{ x: 'max-content' }}
-        locale={{
-          emptyText: list.isError
-            ? 'Could not load data'
-            : lowStock
-              ? 'No products are at or below their reorder level'
-              : 'No stock yet. Receive goods or post an adjustment to add stock.',
+        page={page}
+        pageSize={pageSize}
+        onPageChange={(p, ps) => {
+          setPage(p);
+          setPageSize(ps);
         }}
-        pagination={{
-          current: page,
-          pageSize,
-          total: data?.total ?? 0,
-          showSizeChanger: true,
-          showTotal: (t) => `${t} rows`,
-          onChange: (p, ps) => {
-            setPage(ps !== pageSize ? 1 : p);
-            setPageSize(ps);
-          },
-        }}
+        emptyText={
+          lowStock
+            ? 'No products are at or below their reorder level'
+            : 'No stock yet. Receive goods or post an adjustment to add stock.'
+        }
+        totalLabel="rows"
       />
     </>
   );

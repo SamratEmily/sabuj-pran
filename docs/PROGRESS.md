@@ -225,3 +225,28 @@ Verified from a clean state:
 - `make test`: 208 passed in the container, including the concurrency tests on `bms_conc_test`.
 - `make lint`: ruff + tsc clean; `alembic check` clean.
 - Browser smoke on http://localhost:5173: all five demo users log in to their role dashboards with no console errors.
+
+## 2026-10-13 — Task 18: Review fixes
+Done:
+- Concurrency (found while testing the party lock): engine isolation is now READ COMMITTED. Under REPEATABLE READ, lines read after waiting for a header lock came from a stale snapshot - 20 concurrent deliveries of a 5-unit order all posted (same exposure for receipts and returns). New concurrency test: exactly 5 succeed.
+- Sales return refund capped at what the customer overpaid on the invoice after the return (an unpaid invoice can't be refunded). The dashboard test fixture relied on the old behaviour (refund of 54 while 386 was still owed); it now pays 1,440 so the refund is valid, expectations recomputed.
+- Purchase return: the return completing a receipt takes the remaining discount (was leaving e.g. 0.01 supplier due).
+- Opening-due edit locks the party row; postings take a shared lock on it. Concurrency test.
+- Posting transfers/adjustments/counts/receipts re-checks active warehouse and products.
+- Performance: inventory and purchase document lists batch-load names (fixed query count per page); stock/account ledgers load only the users on the page; routes are lazy-loaded (entry chunk 2,080 kB -> 296 kB).
+- Frontend: `PagedTable` (server pagination + loading/empty/error states) used by CrudPage and the audit log, price list, current stock, goods receipts, stock/account ledgers and approvals pages.
+
+Verified: pytest 214 passed (6 new tests; the new refund, discount-remainder and concurrent-delivery tests fail on the old code), ruff check/format, `tsc` + `npm run build`, headless Chrome on the demo data: every refactored page renders with pagination and no console errors; paging the audit log works.
+Note: on this Colima setup the dev servers don't see edits to existing files (no file events through the mount); `docker compose restart frontend backend` picks them up.
+
+## 2026-10-13 — Task 19: Second review pass
+Done:
+- Sales return modal follows the new refund rule: shows the refundable amount (what the customer overpaid after the return) and disables the field when it is 0, instead of failing on submit.
+- Float math removed from the frontend: the return's discount estimate used `Number(...) / Number(...)`; new exact `ratio()` in utils/decimal.ts. Quantity formatting and zero checks in the stock document, count, receipts and ledger pages now use the decimal helpers (the dashboard chart still passes numbers to Recharts, display only). An earlier float scan missed these because zsh expanded the unquoted `--include=*.ts` glob.
+- A warehouse with on-hand or reserved stock can't be deactivated (WAREHOUSE_HAS_STOCK); otherwise its stock would be stranded since posting now re-checks active warehouses.
+- IntegrityError from a unique-key race (e.g. two users marking the same attendance date) returns 409 CONFLICT instead of 500.
+- Dashboard pending orders load order lines in one query (was one per order).
+Checked without changes: auth (timing-safe login, reset tokens hashed/single-use), employees/payroll, approvals, admin (last-admin lock, Admin permissions locked, sequences only increase), audit coverage of every write path, backend error display on every form.
+
+Verified: pytest 216 passed, ruff check/format, `tsc` + `npm run build`, `ratio()` checked against hand-computed shares, headless Chrome: the return modal offers 185.00 on a paid invoice and 0 (disabled) on a partly paid one, no console errors.
+

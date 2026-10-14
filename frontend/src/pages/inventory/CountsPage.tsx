@@ -12,7 +12,7 @@ import CrudPage from '../../components/CrudPage';
 import DocLineItems, { newLine, validateCountLines } from '../../components/DocLineItems';
 import type { DocLine } from '../../components/DocLineItems';
 import QtyText from '../../components/QtyText';
-import { compare, subtract } from '../../utils/decimal';
+import { compare, formatDecimal, subtract } from '../../utils/decimal';
 import { notifyError } from '../../utils/notify';
 import { dateColumn, numberColumn, tailColumns } from './docColumns';
 import { STATUS_FILTER_OPTIONS } from './labels';
@@ -49,7 +49,7 @@ function VarianceCell({ line, warehouseId }: { line: DocLine; warehouseId?: numb
     <div style={{ textAlign: 'right' }}>
       <Tag color={sign < 0 ? 'red' : 'green'} style={{ marginInlineEnd: 0, fontWeight: 600 }}>
         {sign > 0 ? '+' : ''}
-        {Number(variance).toLocaleString(undefined, { maximumFractionDigits: 3 })}
+        {formatDecimal(variance, 3, true)}
       </Tag>
     </div>
   );

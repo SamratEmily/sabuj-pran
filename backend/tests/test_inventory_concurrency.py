@@ -219,3 +219,92 @@ def test_twenty_threads_paying_one_from_ten(conc: Conc) -> None:
     with Session(conc.engine) as s:
         assert s.get(MoneyAccount, account_id).balance == D("0.00")
         assert money.ledger_balance(s, account_id) == D("0.00")
+
+
+def test_opening_due_edit_waits_for_an_in_flight_posting(conc: Conc) -> None:
+    """A posting holds a shared lock on the party row, so an opening-due edit started
+    meanwhile waits and then sees the transaction (OPENING_LOCKED) instead of slipping in."""
+    from app.modules.parties import service as parties
+    from app.modules.parties.models import CUSTOMER
+    from app.modules.parties.schemas import PartyIn
+
+    with Session(conc.engine) as s:
+        user = s.get(User, conc.admin_id)
+        assert user is not None
+        party = parties.create_party(s, user, parties.CUSTOMERS, PartyIn(name="Race Traders"))
+        party_id = party.id
+
+    outcome: list[str] = []
+    started = threading.Event()
+
+    def edit() -> None:
+        with Session(conc.engine) as s:
+            user = s.get(User, conc.admin_id)
+            assert user is not None
+            started.set()
+            try:
+                parties.update_party(
+                    s,
+                    user,
+                    parties.CUSTOMERS,
+                    party_id,
+                    PartyIn(name="Race Traders", opening_due=D("500")),
+                )
+                outcome.append("ok")
+            except AppError as exc:
+                outcome.append(exc.code)
+
+    with Session(conc.engine) as poster:
+        user = poster.get(User, conc.admin_id)
+        assert user is not None
+        parties.post_party_entry(
+            poster, CUSTOMER, party_id, today(), D("100"), D("0"), "INVOICE", 1, "", user
+        )
+        thread = threading.Thread(target=edit)
+        thread.start()
+        started.wait()
+        thread.join(timeout=1)
+        assert thread.is_alive(), "the edit did not wait for the posting's lock"
+        poster.commit()
+    thread.join(timeout=30)
+    assert outcome == ["OPENING_LOCKED"]
+
+
+def test_twenty_threads_delivering_one_of_five(conc: Conc) -> None:
+    """Each delivery locks the order and must then see the lines as committed by the
+    deliveries before it: exactly 5 of 20 succeed; the rest find the order delivered."""
+    from app.modules.parties import service as parties
+    from app.modules.parties.schemas import PartyIn
+    from app.modules.sales import service as sales
+    from app.modules.sales.schemas import DeliverIn, DeliverItemIn, LineIn, SoIn
+
+    p = conc.products[2]
+    committed(
+        conc,
+        lambda s, u: inv.stock_in(
+            s, p, conc.wh1, D("50"), D("10"), PURCHASE_IN, "TEST", None, today(), u
+        ),
+    )
+    with Session(conc.engine) as s:
+        user = s.get(User, conc.admin_id)
+        assert user is not None
+        cust = parties.create_party(s, user, parties.CUSTOMERS, PartyIn(name="Busy Buyer"))
+        so = sales.create_so(
+            s,
+            user,
+            SoIn(
+                customer_id=cust.id,
+                warehouse_id=conc.wh1,
+                items=[LineIn(product_id=p, qty=D("5"), unit_price=D("20"))],
+            ),
+        )
+        sales.confirm_so(s, user, so.id)
+        so_id, line_id = so.id, so.items[0].id
+    before = read_balance(conc, p, conc.wh1).qty_on_hand
+
+    def work(s: Session, u: User, i: int) -> None:
+        sales.deliver(s, u, so_id, DeliverIn(items=[DeliverItemIn(so_item_id=line_id, qty=D("1"))]))
+
+    outcomes = run_parallel(conc, work)
+    assert sorted(outcomes) == ["INVALID_STATUS"] * 15 + ["ok"] * 5, outcomes
+    assert read_balance(conc, p, conc.wh1).qty_on_hand == before - 5

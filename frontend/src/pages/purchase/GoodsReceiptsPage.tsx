@@ -1,4 +1,4 @@
-import { Input, Table, Tabs, Tag, Typography } from 'antd';
+import { Input, Tabs, Tag, Typography } from 'antd';
 import type { TableProps } from 'antd';
 import { useState } from 'react';
 import { Link } from 'react-router';
@@ -6,11 +6,12 @@ import { Link } from 'react-router';
 import { PURCHASE } from '../../api/purchase';
 import type { GoodsReceiptDoc, PurchaseReturnDoc } from '../../api/purchase';
 import DateText from '../../components/DateText';
-import ErrorState from '../../components/ErrorState';
 import MoneyText from '../../components/MoneyText';
 import PageHeader from '../../components/PageHeader';
+import PagedTable from '../../components/PagedTable';
 import { useList } from '../../hooks/useApi';
 import { usePermission } from '../../hooks/usePermission';
+import { formatDecimal } from '../../utils/decimal';
 
 const right = (text: string) => <span style={{ display: 'block', textAlign: 'right' }}>{text}</span>;
 const poLink = (id: number | null, number: string | null) =>
@@ -37,25 +38,16 @@ function DocTable<T extends { id: number }>({ endpoint, columns, placeholder, em
           setPage(1);
         }}
       />
-      {list.isError && <ErrorState error={list.error} onRetry={() => list.refetch()} />}
-      <Table<T>
-        rowKey="id"
-        size="middle"
+      <PagedTable<T>
+        query={list}
         columns={columns}
-        dataSource={list.data?.items ?? []}
-        loading={list.isFetching}
-        scroll={{ x: 'max-content' }}
-        locale={{ emptyText: list.isError ? 'Could not load data' : empty }}
-        pagination={{
-          current: page,
-          pageSize,
-          total: list.data?.total ?? 0,
-          showSizeChanger: true,
-          onChange: (p, ps) => {
-            setPage(ps !== pageSize ? 1 : p);
-            setPageSize(ps);
-          },
+        page={page}
+        pageSize={pageSize}
+        onPageChange={(p, ps) => {
+          setPage(p);
+          setPageSize(ps);
         }}
+        emptyText={empty}
       />
     </>
   );
@@ -78,7 +70,7 @@ const returnColumns: TableProps<PurchaseReturnDoc>['columns'] = [
   { title: 'Receipt', dataIndex: 'grn_number' },
   { title: 'Purchase order', key: 'po', render: (_, r) => poLink(r.po_id, r.po_number) },
   { title: 'Supplier', dataIndex: 'supplier_name' },
-  { title: 'Items', key: 'i', render: (_, r) => r.items.map((i) => `${Number(i.qty)} ${i.unit_code} ${i.product_code}`).join(', ') },
+  { title: 'Items', key: 'i', render: (_, r) => r.items.map((i) => `${formatDecimal(i.qty, 3, true)} ${i.unit_code} ${i.product_code}`).join(', ') },
   { title: right('Debited'), dataIndex: 'total', render: (v: string) => <MoneyText value={v} strong /> },
   { title: 'Notes', dataIndex: 'notes', ellipsis: true },
 ];

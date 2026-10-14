@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,15 @@ async def validation_error_handler(_: Request, exc: RequestValidationError) -> J
     return _error(422, "VALIDATION_ERROR", detail, errors=errors)
 
 
+async def integrity_error_handler(_: Request, exc: IntegrityError) -> JSONResponse:
+    # A unique key won a race that the service's own pre-check could not see (e.g. two
+    # users saving the same record at once). The request's transaction is rolled back.
+    logger.warning("Integrity error: %s", exc.orig)
+    return _error(
+        409, "CONFLICT", "This conflicts with a record saved at the same time. Reload and retry."
+    )
+
+
 async def unhandled_error_handler(_: Request, exc: Exception) -> JSONResponse:
     logger.exception("Unhandled error", exc_info=exc)
     return _error(500, "INTERNAL_ERROR", "Internal server error")
@@ -62,4 +72,5 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AppError, app_error_handler)
     app.add_exception_handler(StarletteHTTPException, http_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
+    app.add_exception_handler(IntegrityError, integrity_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)

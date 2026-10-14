@@ -122,7 +122,7 @@ def data(
     )  # fmt: skip
 
     # --- money today / yesterday
-    money("collections", {"customer_id": c1["id"], "account_id": cash, "amount": "1000",
+    money("collections", {"customer_id": c1["id"], "account_id": cash, "amount": "1440",
                           "collection_date": TODAY, "invoice_id": dlv1["invoice_id"]})  # fmt: skip
     money("collections", {"customer_id": c2["id"], "account_id": bank, "amount": "100",
                           "collection_date": YESTERDAY})  # fmt: skip
@@ -133,7 +133,8 @@ def data(
     reversed_col = money("collections", {"customer_id": c1["id"], "account_id": cash,
                                          "amount": "50", "collection_date": TODAY})  # fmt: skip
     post(f"/money/collections/{reversed_col['id']}/reverse")
-    # sales return today: 2 x P2 @80 = 160 - 6 discount share = 154; refund 54 from cash
+    # sales return today: 2 x P2 @80 = 160 - 6 discount share = 154; C1 paid 1,440 of
+    # 1,540, so after the return it has overpaid 54 - refunded from cash
     invoice = client.get(f"/api/v1/sales/invoices/{dlv1['invoice_id']}", headers=h).json()
     p2_inv = next(i for i in invoice["items"] if i["product_id"] == p2)
     post(
@@ -174,28 +175,25 @@ def test_every_metric_matches_the_hand_calculation(
     d = res.json()
     assert (d["as_of"], d["month_start"]) == (TODAY, "2025-06-01")
 
-    # today: sales 1,540 - 154 return; collections 1,000 + 200 (reversed 50 ignored);
+    # today: sales 1,540 - 154 return; collections 1,440 + 200 (reversed 50 ignored);
     # expenses 300 + payroll 3,000 (reversed 40 ignored); purchase 1,900 - 95 return
     assert d["today_sales"] == "1386.00"
-    assert d["today_collection"] == "1200.00"
+    assert d["today_collection"] == "1640.00"
     assert d["today_expenses"] == "3300.00"
     assert d["today_purchase"] == "1805.00"
 
-    # cash: 10,000 + 1,000 + 200 + 250 - 54 refund - 300 - 200 - 500 - 3,000 = 7,396
+    # cash: 10,000 + 1,440 + 200 + 250 - 54 refund - 300 - 200 - 500 - 3,000 = 7,836
     # (reversed collection / expense net to zero); bank: 100 - 80 = 20
     assert (d["cash_balance"], d["bank_balance"], d["mfs_balance"]) == (
-        "7396.00",
+        "7836.00",
         "20.00",
         "0.00",
     )
 
-    # dues: C1 1,540 - 154 + 54 - 1,000 = 440; C2 400 - 100 = 300; C3 -200 (advance, not
+    # dues: C1 1,540 - 154 + 54 - 1,440 = 0; C2 400 - 100 = 300; C3 -200 (advance, not
     # counted); supplier 1,900 - 95 - 80 = 1,725
-    assert d["customer_due"] == "740.00"
-    assert [(c["name"], c["due"]) for c in d["top_customers"]] == [
-        ("Rahim Traders", "440.00"),
-        ("Karim Store", "300.00"),
-    ]
+    assert d["customer_due"] == "300.00"
+    assert [(c["name"], c["due"]) for c in d["top_customers"]] == [("Karim Store", "300.00")]
     assert d["supplier_due"] == "1725.00"
     assert [(s["name"], s["due"]) for s in d["top_suppliers"]] == [("Plastic Mills", "1725.00")]
 
@@ -215,7 +213,7 @@ def test_every_metric_matches_the_hand_calculation(
     series = {p["date"]: (p["sales"], p["collection"]) for p in d["sales_vs_collection"]}
     assert list(series) == [f"2025-06-{day:02d}" for day in range(9, 16)]
     assert series[YESTERDAY] == ("400.00", "100.00")
-    assert series[TODAY] == ("1386.00", "1200.00")
+    assert series[TODAY] == ("1386.00", "1640.00")
     assert series["2025-06-10"] == ("0.00", "0.00")
 
 
@@ -241,16 +239,16 @@ def test_sections_follow_permissions(client: TestClient, db: Session, data: dict
     ):
         assert hidden not in sales, hidden
     assert sales["today_sales"] == "1386.00"
-    assert sales["customer_due"] == "740.00"
+    assert sales["customer_due"] == "300.00"
     assert sales["pending_orders_count"] == 2
     assert "low_stock" in sales
 
     owner = summary("owner")  # every .view permission: everything
     assert set(owner["sections"]) == set(dashboard.SECTIONS)
-    assert owner["cash_balance"] == "7396.00"
+    assert owner["cash_balance"] == "7836.00"
 
     accounts = summary("accounts")
-    assert accounts["cash_balance"] == "7396.00"
+    assert accounts["cash_balance"] == "7836.00"
     # Accounts sees invoices (to collect against them) but not stock or orders
     assert accounts["today_sales"] == "1386.00"
     assert "inventory_value" not in accounts and "pending_orders_count" not in accounts

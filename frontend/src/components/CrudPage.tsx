@@ -1,5 +1,5 @@
 import { EditOutlined, PlusOutlined, StopOutlined, UndoOutlined } from '@ant-design/icons';
-import { App, Button, DatePicker, Drawer, Flex, Form, Input, Modal, Select, Space, Table } from 'antd';
+import { App, Button, DatePicker, Drawer, Flex, Form, Input, Modal, Select, Space } from 'antd';
 import type { FormInstance, TableProps } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { useQueryClient } from '@tanstack/react-query';
@@ -12,8 +12,8 @@ import { errorCode, errorMessage } from '../api/client';
 import { applyServerErrors } from '../utils/forms';
 import { notifyError } from '../utils/notify';
 import ConfirmButton from './ConfirmButton';
-import ErrorState from './ErrorState';
 import PageHeader from './PageHeader';
+import PagedTable from './PagedTable';
 import StatusTag from './StatusTag';
 
 export interface CrudRecord {
@@ -343,27 +343,16 @@ export default function CrudPage<T extends CrudRecord, TForm extends object = Re
         ))}
       </Flex>
 
-      {list.isError && <ErrorState error={list.error} onRetry={() => list.refetch()} />}
-
-      <Table<T>
-        rowKey="id"
-        size="middle"
+      <PagedTable<T>
+        query={list}
         columns={tableColumns}
-        dataSource={list.data?.items ?? []}
-        loading={list.isFetching}
-        scroll={{ x: 'max-content' }}
-        locale={{ emptyText: list.isError ? 'Could not load data' : `No ${itemName}s found` }}
-        pagination={{
-          current: page,
-          pageSize,
-          total: list.data?.total ?? 0,
-          showSizeChanger: true,
-          showTotal: (total) => `${total} total`,
-          onChange: (p, ps) => {
-            setPage(ps !== pageSize ? 1 : p);
-            setPageSize(ps);
-          },
+        page={page}
+        pageSize={pageSize}
+        onPageChange={(p, ps) => {
+          setPage(p);
+          setPageSize(ps);
         }}
+        emptyText={`No ${itemName}s found`}
       />
 
       {formMode === 'drawer' ? (

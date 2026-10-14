@@ -456,7 +456,11 @@ def account_ledger(
         .limit(params.page_size)
         .offset(params.offset)
     ).all()
-    users = {u.id: u.full_name for u in db.scalars(select(User))} if rows else {}
+    users = dict(
+        db.execute(
+            select(User.id, User.full_name).where(User.id.in_({t.created_by for t, _ in rows}))
+        ).all()
+    )
     return {
         "items": [
             {

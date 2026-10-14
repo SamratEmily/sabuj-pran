@@ -37,9 +37,14 @@ def utcnow() -> datetime:
 
 def make_engine(url: str, **kwargs: Any) -> Engine:
     # Session time zone UTC so NOW() server defaults match utcnow().
+    # READ COMMITTED: postings lock a header row (order, invoice...) and then read its lines
+    # with plain SELECTs. Under MySQL's default REPEATABLE READ those reads would use the
+    # snapshot taken at the request's first query (loading the user), i.e. from before the
+    # transaction that held the lock committed - allowing over-delivery/receipt/return.
     return create_engine(
         url,
         pool_pre_ping=True,
+        isolation_level="READ COMMITTED",
         connect_args={"init_command": "SET time_zone = '+00:00'"},
         **kwargs,
     )

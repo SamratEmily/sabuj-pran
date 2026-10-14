@@ -15,6 +15,7 @@ from app.core.errors import AppError
 from app.core.numbering import next_free_code
 from app.core.pagination import PageParams, paginate
 from app.modules.auth.models import User
+from app.modules.inventory.models import StockBalance
 from app.modules.master.models import (
     Category,
     ExpenseCategory,
@@ -326,6 +327,25 @@ def set_warehouse_active(
             "The default warehouse cannot be deactivated. "
             "Make another warehouse the default first.",
         )
+    if not active and warehouse.is_active:
+        # Stock in an inactive warehouse could not be moved or sold (like a money account,
+        # which needs a zero balance). Lock the rows so no posting adds stock meanwhile.
+        holding = db.scalar(
+            select(func.count())
+            .select_from(StockBalance)
+            .where(
+                StockBalance.warehouse_id == warehouse.id,
+                or_(StockBalance.qty_on_hand != 0, StockBalance.qty_reserved != 0),
+            )
+            .with_for_update()
+        )
+        if holding:
+            raise AppError(
+                400,
+                "WAREHOUSE_HAS_STOCK",
+                f"{warehouse.name} still holds stock of {holding} product(s). "
+                "Transfer or adjust it out before deactivating.",
+            )
     return set_item_active(db, actor, WAREHOUSE, warehouse_id, active, request=request)
 
 

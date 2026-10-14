@@ -21,7 +21,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy import Select, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.dates import today
 from app.core.db import utcnow
@@ -224,7 +224,9 @@ def pending_orders(db: Session) -> tuple[int, Decimal]:
     order's discount in the same proportion."""
     orders = list(
         db.scalars(
-            select(SalesOrder).where(SalesOrder.status.in_((CONFIRMED, PARTIALLY_DELIVERED)))
+            select(SalesOrder)
+            .where(SalesOrder.status.in_((CONFIRMED, PARTIALLY_DELIVERED)))
+            .options(selectinload(SalesOrder.items))
         )
     )
     value = ZERO

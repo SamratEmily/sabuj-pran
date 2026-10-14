@@ -239,6 +239,28 @@ def test_exactly_one_default_warehouse(client: TestClient, db: Session, admin: U
     assert _defaults(db) == ["MAIN"]
 
 
+def test_warehouse_with_stock_cannot_be_deactivated(
+    client: TestClient, db: Session, admin: User
+) -> None:
+    from app.modules.inventory import service as inventory
+    from app.modules.inventory.models import ADJUST_OUT, PURCHASE_IN
+
+    h = auth_headers(admin)
+    depot = client.post(f"{API}/warehouses", headers=h, json={"name": "Depot", "code": "DEP"})
+    wh = depot.json()["id"]
+    product = _id(db, Product, code="P-0001")
+    inventory.stock_in(db, product, wh, Decimal("2"), Decimal("10"), PURCHASE_IN, "T", None,
+                       today(), admin)  # fmt: skip
+    res = client.post(f"{API}/warehouses/{wh}/deactivate", headers=h)
+    assert res.json()["code"] == "WAREHOUSE_HAS_STOCK"
+    assert db.get(Warehouse, wh).is_active  # type: ignore[union-attr]
+
+    inventory.stock_out(db, product, wh, Decimal("2"), ADJUST_OUT, "T", None, today(), admin)
+    res = client.post(f"{API}/warehouses/{wh}/deactivate", headers=h)
+    assert res.status_code == 200, res.text
+    assert res.json()["is_active"] is False
+
+
 def test_first_warehouse_becomes_default(
     client: TestClient, db: Session, make_user: MakeUser
 ) -> None:

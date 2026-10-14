@@ -1,7 +1,7 @@
 import { DownOutlined, KeyOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
-import { Avatar, Badge, Dropdown, Flex, Layout, Menu, Tag, Typography, theme } from 'antd';
+import { Avatar, Badge, Dropdown, Flex, Layout, Menu, Spin, Tag, Typography, theme } from 'antd';
 import type { MenuProps } from 'antd';
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 
 import { usePendingCount } from '../api/approvals';
@@ -134,7 +134,9 @@ export default function AppLayout() {
         </Layout.Header>
         <Layout.Content style={{ margin: 16 }}>
           <div style={{ background: token.colorBgContainer, borderRadius: token.borderRadiusLG, padding: 24, minHeight: '100%' }}>
-            <Outlet />
+            <Suspense fallback={<Flex justify="center" style={{ padding: 48 }}><Spin /></Flex>}>
+              <Outlet />
+            </Suspense>
           </div>
         </Layout.Content>
       </Layout>

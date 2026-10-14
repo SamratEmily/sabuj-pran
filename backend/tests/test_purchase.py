@@ -205,6 +205,23 @@ def test_receipt_rejections_change_nothing(
     assert stock(db, env, "p1")[0] == D("7")
 
 
+def test_receipt_refused_for_a_product_deactivated_after_approval(
+    client: TestClient, db: Session, admin: User, env: dict[str, int]
+) -> None:
+    h = auth_headers(admin)
+    po = create_approved(client, h, env)
+    db.get(Product, env["p1"]).is_active = False  # type: ignore[union-attr]
+    db.flush()
+    before = counts(db)
+    res = client.post(
+        f"{API}/orders/{po['id']}/receive",
+        headers=h,
+        json={"items": [{"po_item_id": line_id(po, env, "p1"), "qty": "1"}]},
+    )
+    assert res.json()["code"] == "INACTIVE_PRODUCT"
+    assert counts(db) == before
+
+
 def test_direct_purchase(client: TestClient, db: Session, admin: User, env: dict[str, int]) -> None:
     h = auth_headers(admin)
     body = po_body(env, "50", p1=("3", "150"))
@@ -266,6 +283,36 @@ def test_return_reduces_stock_and_supplier_due(
     line = next(i for i in receipt["items"] if i["id"] == g1["id"])
     assert (line["returned_qty"], line["returnable_qty"]) == ("3.000", "7.000")
     assert [r["prn_number"] for r in receipt["returns"]] == ["PRN-000001"]
+
+
+def test_returning_everything_returns_the_whole_discount(
+    client: TestClient, db: Session, admin: User, env: dict[str, int]
+) -> None:
+    """Rounded shares (0.08 / 0.25 per unit) would leave 0.01 owed; the last return takes
+    the remainder so the supplier due ends at exactly zero."""
+    h = auth_headers(admin)
+    body = po_body(env, "1", p1=("3", "1"), p2=("3", "3.11"))  # 12.33 gross, 1.00 discount
+    po = client.post(f"{API}/orders", headers=h, json=body).json()
+    client.post(f"{API}/orders/{po['id']}/approve", headers=h)
+    grn = client.post(
+        f"{API}/orders/{po['id']}/receive",
+        headers=h,
+        json={"items": [{"po_item_id": i["id"], "qty": i["qty"]} for i in po["items"]]},
+    ).json()
+    assert (grn["total"], due(db, env)) == ("11.33", D("11.33"))
+
+    discounts = []
+    for line in grn["items"]:
+        for _ in range(3):
+            res = client.post(
+                f"{API}/receipts/{grn['id']}/return",
+                headers=h,
+                json={"items": [{"grn_item_id": line["id"], "qty": "1"}]},
+            )
+            assert res.status_code == 201, res.text
+            discounts.append(D(res.json()["discount"]))
+    assert sum(discounts) == D("1.00")
+    assert due(db, env) == D("0.00")
 
 
 def test_return_at_receipt_cost_when_average_differs(

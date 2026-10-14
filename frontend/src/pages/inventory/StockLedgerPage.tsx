@@ -7,13 +7,14 @@ import { INVENTORY, REF_PATHS } from '../../api/inventory';
 import type { LedgerPage, LedgerRow } from '../../api/inventory';
 import { useLookups } from '../../api/master';
 import DateText from '../../components/DateText';
-import ErrorState from '../../components/ErrorState';
 import MoneyText from '../../components/MoneyText';
 import PageHeader from '../../components/PageHeader';
+import PagedTable from '../../components/PagedTable';
 import ProductSelect from '../../components/ProductSelect';
 import QtyText from '../../components/QtyText';
 import { useList } from '../../hooks/useApi';
 import { TXN_LABELS } from './labels';
+import { compare } from '../../utils/decimal';
 
 const right = (text: string) => <span style={{ display: 'block', textAlign: 'right' }}>{text}</span>;
 
@@ -93,8 +94,8 @@ export default function StockLedgerPage() {
         return path && r.ref_id ? <Link to={`${path}/${r.ref_id}`}>{label}</Link> : label;
       },
     },
-    { title: right('In'), dataIndex: 'qty_in', render: (v: string) => (Number(v) ? <QtyText value={v} /> : null) },
-    { title: right('Out'), dataIndex: 'qty_out', render: (v: string) => (Number(v) ? <QtyText value={v} /> : null) },
+    { title: right('In'), dataIndex: 'qty_in', render: (v: string) => (compare(v, 0) ? <QtyText value={v} /> : null) },
+    { title: right('Out'), dataIndex: 'qty_out', render: (v: string) => (compare(v, 0) ? <QtyText value={v} /> : null) },
     { title: right('Balance'), dataIndex: 'running_balance', render: (v: string) => <strong><QtyText value={v} /></strong> },
     { title: right('Unit cost'), dataIndex: 'unit_cost', render: (v: string) => (v ? <MoneyText value={v} scale={4} /> : null) },
     { title: 'By', dataIndex: 'created_by_name', render: (v: string | null) => v ?? '' },
@@ -132,18 +133,17 @@ export default function StockLedgerPage() {
 
       {!productId ? (
         <Empty description="Choose a product to see its stock movements" style={{ marginTop: 48 }} />
-      ) : ledger.isError ? (
-        <ErrorState error={ledger.error} onRetry={() => ledger.refetch()} />
       ) : (
-        <Table<Row>
-          rowKey="id"
-          size="middle"
+        <PagedTable<Row>
+          query={ledger}
           columns={columns}
           dataSource={rows}
-          loading={ledger.isFetching}
-          scroll={{ x: 'max-content' }}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={(p, ps) => set({ page: p, page_size: ps })}
+          emptyText="No movements in this period"
+          totalLabel="movements"
           onRow={(r) => ({ style: r.kind ? { background: 'var(--ant-color-fill-quaternary, #fafafa)' } : undefined })}
-          locale={{ emptyText: 'No movements in this period' }}
           summary={() =>
             data ? (
               <Table.Summary.Row>
@@ -157,14 +157,6 @@ export default function StockLedgerPage() {
               </Table.Summary.Row>
             ) : null
           }
-          pagination={{
-            current: page,
-            pageSize,
-            total: data?.total ?? 0,
-            showSizeChanger: true,
-            showTotal: (t) => `${t} movements`,
-            onChange: (p, ps) => set({ page: ps !== pageSize ? 1 : p, page_size: ps }),
-          }}
         />
       )}
     </>

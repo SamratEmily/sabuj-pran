@@ -893,6 +893,15 @@ def sales_return(
                 "INVALID_REFUND",
                 f"Refund {refund:,.2f} cannot be more than the return total {total:,.2f}",
             )
+        # Only money the customer overpaid on this invoice (after this return) can go back.
+        overpaid = max(ZERO, -(invoice.outstanding - total))
+        if refund > overpaid:
+            raise AppError(
+                400,
+                "INVALID_REFUND",
+                f"Refund {refund:,.2f} cannot be more than the {overpaid:,.2f} the customer "
+                f"has overpaid on {invoice.inv_number} after this return",
+            )
         ret.subtotal, ret.discount, ret.total = subtotal, discount, total
         ret.refund_amount = refund
         if total > 0:

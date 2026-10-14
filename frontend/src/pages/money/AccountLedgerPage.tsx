@@ -7,10 +7,11 @@ import { useLookups } from '../../api/master';
 import { MONEY } from '../../api/money';
 import type { AccountLedgerPage as LedgerPage, AccountLedgerRow } from '../../api/money';
 import DateText from '../../components/DateText';
-import ErrorState from '../../components/ErrorState';
 import MoneyText from '../../components/MoneyText';
 import PageHeader from '../../components/PageHeader';
+import PagedTable from '../../components/PagedTable';
 import { useList } from '../../hooks/useApi';
+import { compare } from '../../utils/decimal';
 
 const right = (text: string) => <span style={{ display: 'block', textAlign: 'right' }}>{text}</span>;
 
@@ -95,8 +96,8 @@ export default function AccountLedgerPage() {
         ),
     },
     { title: 'Reference', dataIndex: 'note', render: (v: string, r) => (r.opening ? null : v) },
-    { title: right('In'), dataIndex: 'money_in', render: (v: string) => (v && Number(v) ? <MoneyText value={v} /> : null) },
-    { title: right('Out'), dataIndex: 'money_out', render: (v: string) => (v && Number(v) ? <MoneyText value={v} /> : null) },
+    { title: right('In'), dataIndex: 'money_in', render: (v: string) => (v && compare(v, 0) ? <MoneyText value={v} /> : null) },
+    { title: right('Out'), dataIndex: 'money_out', render: (v: string) => (v && compare(v, 0) ? <MoneyText value={v} /> : null) },
     { title: right('Balance'), dataIndex: 'running_balance', render: (v: string) => <MoneyText value={v} strong /> },
     { title: 'By', dataIndex: 'created_by_name', render: (v: string | null) => v ?? '' },
   ];
@@ -120,18 +121,17 @@ export default function AccountLedgerPage() {
       </Flex>
       {!accountId ? (
         <Empty description="Choose an account to see its movements" style={{ marginTop: 48 }} />
-      ) : ledger.isError ? (
-        <ErrorState error={ledger.error} onRetry={() => ledger.refetch()} />
       ) : (
-        <Table<Row>
-          rowKey="id"
-          size="middle"
+        <PagedTable<Row>
+          query={ledger}
           columns={columns}
           dataSource={rows}
-          loading={ledger.isFetching}
-          scroll={{ x: 'max-content' }}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={(p, ps) => set({ page: p, page_size: ps })}
+          emptyText="No movements in this period"
+          totalLabel="movements"
           onRow={(r) => ({ style: r.opening ? { background: 'var(--ant-color-fill-quaternary, #fafafa)' } : undefined })}
-          locale={{ emptyText: 'No movements in this period' }}
           summary={() =>
             data ? (
               <Table.Summary.Row>
@@ -145,14 +145,6 @@ export default function AccountLedgerPage() {
               </Table.Summary.Row>
             ) : null
           }
-          pagination={{
-            current: page,
-            pageSize,
-            total: data?.total ?? 0,
-            showSizeChanger: true,
-            showTotal: (t) => `${t} movements`,
-            onChange: (p, ps) => set({ page: ps !== pageSize ? 1 : p, page_size: ps }),
-          }}
         />
       )}
     </>

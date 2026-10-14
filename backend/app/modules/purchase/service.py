@@ -330,6 +330,9 @@ def _receive(
 ) -> GoodsReceipt:
     """Post a receipt for (po_item, qty, unit_cost) lines inside the caller's transaction.
     `po` must already be locked."""
+    # The PO was validated when saved; master data may have been deactivated since.
+    _active_warehouse(db, po.warehouse_id)
+    _active_products(db, [po_item.product_id for po_item, _, _ in lines])
     grn = GoodsReceipt(
         grn_number=next_document_number(db, "GRN"),
         po_id=po.id,
@@ -574,8 +577,11 @@ def purchase_return(
                     PurchaseReturn.goods_receipt_id == grn.id, PurchaseReturn.id != ret.id
                 )
             )
-            share = _money(subtotal * grn.discount / grn.subtotal)
-            discount = max(ZERO, min(share, grn.discount - Decimal(given or 0), subtotal))
+            left = grn.discount - Decimal(given or 0)
+            # The return completing the receipt takes the exact remainder so shares add up.
+            complete = all(i.returned_qty >= i.qty for i in grn.items)
+            share = left if complete else _money(subtotal * grn.discount / grn.subtotal)
+            discount = max(ZERO, min(share, left, subtotal))
         ret.subtotal, ret.discount, ret.total = subtotal, discount, subtotal - discount
         if ret.total > 0:
             parties.post_party_entry(
@@ -703,15 +709,20 @@ def return_out(
 
 
 def receipt_out(
-    db: Session, grn: GoodsReceipt, names: _Names | None = None, po: PurchaseOrder | None = None
+    db: Session,
+    grn: GoodsReceipt,
+    names: _Names | None = None,
+    po: PurchaseOrder | None = None,
+    rets: list[PurchaseReturn] | None = None,
 ) -> dict[str, Any]:
-    rets = list(
-        db.scalars(
-            select(PurchaseReturn)
-            .where(PurchaseReturn.goods_receipt_id == grn.id)
-            .order_by(PurchaseReturn.id)
+    if rets is None:
+        rets = list(
+            db.scalars(
+                select(PurchaseReturn)
+                .where(PurchaseReturn.goods_receipt_id == grn.id)
+                .order_by(PurchaseReturn.id)
+            )
         )
-    )
     names = names or _names_for(db, grns=[grn], rets=rets)
     if rets and any(r.created_by not in names.users for r in rets):
         names = _names_for(db, grns=[grn], rets=rets)
@@ -871,8 +882,22 @@ def list_receipts(
     if params.search:
         stmt = stmt.where(GoodsReceipt.grn_number.contains(params.search, autoescape=True))
     total, grns = _page(db, stmt, params)
+    rets_by_grn: dict[int, list[PurchaseReturn]] = {g.id: [] for g in grns}
+    if grns:
+        for r in db.scalars(
+            select(PurchaseReturn)
+            .where(PurchaseReturn.goods_receipt_id.in_(rets_by_grn))
+            .order_by(PurchaseReturn.id)
+        ):
+            rets_by_grn[r.goods_receipt_id].append(r)
+    all_rets = [r for rs in rets_by_grn.values() for r in rs]
+    names = _names_for(db, grns=grns, rets=all_rets)
+    pos = _by_id(db, PurchaseOrder, [g.po_id for g in grns])
     return {
-        "items": [receipt_out(db, g) for g in grns],
+        "items": [
+            receipt_out(db, g, names, pos.get(g.po_id) if g.po_id else None, rets_by_grn[g.id])
+            for g in grns
+        ],
         "total": total,
         "page": params.page,
         "page_size": params.page_size,
@@ -910,8 +935,19 @@ def list_returns(
     if params.search:
         stmt = stmt.where(PurchaseReturn.prn_number.contains(params.search, autoescape=True))
     total, rets = _page(db, stmt, params)
+    names = _names_for(db, rets=rets)
+    grns = _by_id(db, GoodsReceipt, [r.goods_receipt_id for r in rets])
+    pos = _by_id(db, PurchaseOrder, [g.po_id for g in grns.values()])
     return {
-        "items": [return_detail(db, r) for r in rets],
+        "items": [
+            return_out(
+                r,
+                names,
+                grns[r.goods_receipt_id],
+                pos.get(grns[r.goods_receipt_id].po_id) if grns[r.goods_receipt_id].po_id else None,
+            )
+            for r in rets
+        ],
         "total": total,
         "page": params.page,
         "page_size": params.page_size,

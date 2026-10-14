@@ -70,8 +70,15 @@ def _signed(party_type: str) -> Any:
 
 
 def _party_exists(db: Session, party_type: str, party_id: int) -> bool:
+    """Checks the party exists and holds a shared lock on its row until the caller commits,
+    so postings serialize against an opening-due edit (which locks it FOR UPDATE)."""
     kind = KINDS.get(party_type)
-    return kind is not None and db.get(kind.model, party_id) is not None
+    if kind is None:
+        return False
+    found = db.scalar(
+        select(kind.model.id).where(kind.model.id == party_id).with_for_update(read=True)
+    )
+    return found is not None
 
 
 def post_party_entry(
@@ -369,7 +376,16 @@ def update_party(
     data: PartyIn,
     request: Request | None = None,
 ) -> PartyOut:
-    party = get_party(db, kind, party_id)
+    # Locked so no posting can slip in between the "no transactions yet" check and the
+    # opening-due change (postings take a shared lock on the party row).
+    party = db.scalar(
+        select(kind.model)
+        .where(kind.model.id == party_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if party is None:
+        raise AppError(404, f"{kind.party_type.upper()}_NOT_FOUND", f"{kind.label} not found")
     values = _values(data)
     values["code"] = data.code or party.code
     _check_code(db, kind, values["code"], party.id)

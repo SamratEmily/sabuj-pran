@@ -7,8 +7,8 @@ import { useState } from 'react';
 import { ADMIN, adminApi } from '../../api/admin';
 import type { AdminUser, AuditLogRecord } from '../../api/admin';
 import DateText from '../../components/DateText';
-import ErrorState from '../../components/ErrorState';
 import PageHeader from '../../components/PageHeader';
+import PagedTable from '../../components/PagedTable';
 import { useList } from '../../hooks/useApi';
 import { usePermission } from '../../hooks/usePermission';
 
@@ -145,30 +145,20 @@ export default function AuditLogPage() {
         />
       </Flex>
 
-      {logs.isError && <ErrorState error={logs.error} onRetry={() => logs.refetch()} />}
-
-      <Table<AuditLogRecord>
-        rowKey="id"
-        size="middle"
+      <PagedTable<AuditLogRecord>
+        query={logs}
         columns={columns}
-        dataSource={logs.data?.items ?? []}
-        loading={logs.isFetching}
-        scroll={{ x: 'max-content' }}
-        locale={{ emptyText: logs.isError ? 'Could not load data' : 'No audit entries match these filters' }}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={(p, ps) => {
+          setPage(p);
+          setPageSize(ps);
+        }}
+        emptyText="No audit entries match these filters"
+        totalLabel="entries"
         expandable={{
           rowExpandable: (l) => l.old_values !== null || l.new_values !== null,
           expandedRowRender: (l) => <ValuesDiff log={l} />,
-        }}
-        pagination={{
-          current: page,
-          pageSize,
-          total: logs.data?.total ?? 0,
-          showSizeChanger: true,
-          showTotal: (t) => `${t} entries`,
-          onChange: (p, ps) => {
-            setPage(ps !== pageSize ? 1 : p);
-            setPageSize(ps);
-          },
         }}
       />
     </>

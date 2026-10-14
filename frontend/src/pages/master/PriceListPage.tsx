@@ -12,6 +12,7 @@ import DateText from '../../components/DateText';
 import ErrorState from '../../components/ErrorState';
 import MoneyText from '../../components/MoneyText';
 import PageHeader from '../../components/PageHeader';
+import PagedTable from '../../components/PagedTable';
 import { useList } from '../../hooks/useApi';
 import { usePermission } from '../../hooks/usePermission';
 import { applyServerErrors } from '../../utils/forms';
@@ -178,26 +179,17 @@ export default function PriceListPage() {
           }}
         />
       </Flex>
-      {list.isError && <ErrorState error={list.error} onRetry={() => list.refetch()} />}
-      <Table<ProductRecord>
-        rowKey="id"
-        size="middle"
+      <PagedTable<ProductRecord>
+        query={list}
         columns={columns}
-        dataSource={list.data?.items ?? []}
-        loading={list.isFetching}
-        scroll={{ x: 'max-content' }}
-        locale={{ emptyText: list.isError ? 'Could not load data' : 'No products found' }}
-        pagination={{
-          current: page,
-          pageSize,
-          total: list.data?.total ?? 0,
-          showSizeChanger: true,
-          showTotal: (t) => `${t} products`,
-          onChange: (p, ps) => {
-            setPage(ps !== pageSize ? 1 : p);
-            setPageSize(ps);
-          },
+        page={page}
+        pageSize={pageSize}
+        onPageChange={(p, ps) => {
+          setPage(p);
+          setPageSize(ps);
         }}
+        emptyText="No products found"
+        totalLabel="products"
       />
       <PriceDrawer product={selected} onClose={() => setSelected(null)} />
     </>

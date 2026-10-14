@@ -13,7 +13,7 @@ import MoneyText from '../../components/MoneyText';
 import QtyText from '../../components/QtyText';
 import { usePermission } from '../../hooks/usePermission';
 import { applyServerErrors } from '../../utils/forms';
-import { compare, formatDecimal, multiply, subtract, sum } from '../../utils/decimal';
+import { compare, formatDecimal, multiply, ratio, subtract, sum } from '../../utils/decimal';
 
 const right = (text: string) => <span style={{ display: 'block', textAlign: 'right' }}>{text}</span>;
 
@@ -51,9 +51,14 @@ export default function SalesReturnModal({ invoice, onClose }: { invoice: Invoic
   // Estimate of this return's discount share (the server computes the exact figure).
   const discountShare =
     invoice && compare(invoice.discount, 0) > 0 && compare(invoice.subtotal, 0) > 0
-      ? multiply(gross, String(Number(invoice.discount) / Number(invoice.subtotal)), 2)
+      ? ratio(gross, invoice.discount, invoice.subtotal, 2)
       : '0';
   const net = subtract(gross, discountShare, 2);
+  // Only what the customer has overpaid after this return can be refunded (server rule):
+  // min(net, net - outstanding), never below 0. An unpaid invoice gets no refund.
+  const outstanding = invoice?.outstanding ?? '0';
+  const afterReturn = subtract(net, compare(outstanding, 0) > 0 ? outstanding : '0', 2);
+  const refundable = compare(afterReturn, 0) > 0 ? afterReturn : '0.00';
 
   const mutation = useMutation({
     mutationFn: (v: FormValues) =>
@@ -156,14 +161,24 @@ export default function SalesReturnModal({ invoice, onClose }: { invoice: Invoic
                 <Form.Item
                   name="refund_amount"
                   label="Refund now (optional)"
+                  extra={`Up to ${formatDecimal(refundable, 2)}: what the customer has paid beyond what they owe after this return`}
                   rules={[
                     {
                       validator: (_, v) =>
-                        v && compare(v, net) > 0 ? Promise.reject(new Error('Refund cannot exceed the return value')) : Promise.resolve(),
+                        v && compare(v, refundable) > 0
+                          ? Promise.reject(new Error(`Refund cannot exceed ${formatDecimal(refundable, 2)}`))
+                          : Promise.resolve(),
                     },
                   ]}
                 >
-                  <InputNumber<string> stringMode min="0" precision={2} style={{ width: '100%' }} placeholder="0.00" />
+                  <InputNumber<string>
+                    stringMode
+                    min="0"
+                    precision={2}
+                    disabled={compare(refundable, 0) <= 0}
+                    style={{ width: '100%' }}
+                    placeholder="0.00"
+                  />
                 </Form.Item>
               </Col>
               <Col xs={24} md={8}>

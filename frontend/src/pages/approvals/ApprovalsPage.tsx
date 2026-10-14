@@ -1,6 +1,6 @@
 import { CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Alert, App, Button, DatePicker, Flex, Input, Modal, Select, Table, Tabs, Tooltip, Typography } from 'antd';
+import { Alert, App, Button, DatePicker, Flex, Input, Modal, Select, Tabs, Tooltip, Typography } from 'antd';
 import type { TableProps } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { useState } from 'react';
@@ -10,9 +10,9 @@ import { errorMessage } from '../../api/client';
 import { APPROVALS, DOCUMENT_TYPE_OPTIONS, approvalsApi, documentLink } from '../../api/approvals';
 import type { ApprovalRequest } from '../../api/approvals';
 import DateText from '../../components/DateText';
-import ErrorState from '../../components/ErrorState';
 import MoneyText from '../../components/MoneyText';
 import PageHeader from '../../components/PageHeader';
+import PagedTable from '../../components/PagedTable';
 import StatusTag from '../../components/StatusTag';
 import { useList } from '../../hooks/useApi';
 import { usePermission } from '../../hooks/usePermission';
@@ -88,6 +88,7 @@ function DecisionModal({ target, onClose }: { target: { approval: ApprovalReques
 function ApprovalTable({ history }: { history: boolean }) {
   const canDecide = usePermission('approval.approve');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [documentType, setDocumentType] = useState<string>();
   const [status, setStatus] = useState<string>();
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
@@ -95,7 +96,7 @@ function ApprovalTable({ history }: { history: boolean }) {
   const [target, setTarget] = useState<{ approval: ApprovalRequest; decision: 'approve' | 'reject' } | null>(null);
   const list = useList<ApprovalRequest>(history ? APPROVALS.history : APPROVALS.pending, {
     page,
-    page_size: 20,
+    page_size: pageSize,
     search,
     document_type: documentType,
     ...(history ? { status, from: range?.[0]?.format('YYYY-MM-DD'), to: range?.[1]?.format('YYYY-MM-DD') } : {}),
@@ -157,19 +158,17 @@ function ApprovalTable({ history }: { history: boolean }) {
           </>
         )}
       </Flex>
-      {list.isError ? (
-        <ErrorState error={list.error} onRetry={() => list.refetch()} />
-      ) : (
-        <Table<ApprovalRequest>
-          rowKey="id"
-          loading={list.isFetching}
-          columns={columns}
-          dataSource={list.data?.items ?? []}
-          scroll={{ x: 'max-content' }}
-          locale={{ emptyText: history ? 'No approval requests yet' : 'Nothing is waiting for your approval' }}
-          pagination={{ current: page, pageSize: 20, total: list.data?.total ?? 0, onChange: setPage, showSizeChanger: false }}
-        />
-      )}
+      <PagedTable<ApprovalRequest>
+        query={list}
+        columns={columns}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={(p, ps) => {
+          setPage(p);
+          setPageSize(ps);
+        }}
+        emptyText={history ? 'No approval requests yet' : 'Nothing is waiting for your approval'}
+      />
       <DecisionModal target={target} onClose={() => setTarget(null)} />
     </>
   );

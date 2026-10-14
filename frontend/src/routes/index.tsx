@@ -1,4 +1,5 @@
 import { Result } from 'antd';
+import { lazy } from 'react';
 import { createBrowserRouter } from 'react-router';
 import type { RouteObject } from 'react-router';
 
@@ -7,16 +8,18 @@ import AuthLayout from '../layouts/AuthLayout';
 import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage';
 import LoginPage from '../pages/auth/LoginPage';
 import ResetPasswordPage from '../pages/auth/ResetPasswordPage';
-import HomePage from '../pages/home/HomePage';
-import StockDocumentPage from '../pages/inventory/StockDocumentPage';
-import PurchaseOrderPage from '../pages/purchase/PurchaseOrderPage';
-import InvoicePage from '../pages/sales/InvoicePage';
-import SalesOrderPage from '../pages/sales/SalesOrderPage';
-import ChangePasswordPage from '../pages/profile/ChangePasswordPage';
-import StatementPage from '../pages/parties/StatementPage';
-import ProfilePage from '../pages/profile/ProfilePage';
 import { CHANGE_PASSWORD_PATH, GuestOnlyRoute, ProtectedRoute, RequirePermission } from './guards';
 import { navLeaves } from './navigation';
+
+// Pages load on first visit (keeps the initial bundle small).
+const HomePage = lazy(() => import('../pages/home/HomePage'));
+const StockDocumentPage = lazy(() => import('../pages/inventory/StockDocumentPage'));
+const PurchaseOrderPage = lazy(() => import('../pages/purchase/PurchaseOrderPage'));
+const InvoicePage = lazy(() => import('../pages/sales/InvoicePage'));
+const SalesOrderPage = lazy(() => import('../pages/sales/SalesOrderPage'));
+const ChangePasswordPage = lazy(() => import('../pages/profile/ChangePasswordPage'));
+const StatementPage = lazy(() => import('../pages/parties/StatementPage'));
+const ProfilePage = lazy(() => import('../pages/profile/ProfilePage'));
 
 // One route per menu leaf, guarded by the same permission that shows the menu entry.
 const moduleRoutes: RouteObject[] = navLeaves().map((leaf) => ({

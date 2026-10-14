@@ -17,7 +17,7 @@ import PageHeader from '../../components/PageHeader';
 import QtyText from '../../components/QtyText';
 import StatusTag from '../../components/StatusTag';
 import { usePermission } from '../../hooks/usePermission';
-import { compare, multiply, sum } from '../../utils/decimal';
+import { compare, formatDecimal, multiply, sum } from '../../utils/decimal';
 
 export type StockDocKind = 'transfers' | 'adjustments' | 'counts';
 
@@ -71,7 +71,7 @@ function itemColumns(kind: StockDocKind, doc: StockDoc): TableProps<Item>['colum
               ) : (
                 <Tag color={sign < 0 ? 'red' : 'green'} style={{ marginInlineEnd: 0, fontWeight: 600 }}>
                   {sign > 0 ? '+' : ''}
-                  {Number(v).toLocaleString(undefined, { maximumFractionDigits: 3 })}
+                  {formatDecimal(v, 3, true)}
                 </Tag>
               )}
             </div>

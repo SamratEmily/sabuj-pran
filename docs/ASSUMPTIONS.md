@@ -1,6 +1,11 @@
 # Assumptions
 
 - Validation errors (422) return `{detail, code: "VALIDATION_ERROR", errors: [{loc, msg, type}]}`. `errors` is extra so forms can show field-level messages.
+- Database sessions use READ COMMITTED isolation. Postings lock a header row (order, invoice, receipt, party) and then read its lines with plain SELECTs; under MySQL's default REPEATABLE READ those reads would come from the snapshot taken at the request's first query (loading the user), so a request that waited for the lock would not see what the lock holder committed (20 concurrent deliveries of a 5-unit order all succeeded).
+- A unique-key race that slips past a service's pre-check (e.g. two people saving the same attendance date at once) returns 409 `CONFLICT` instead of a 500.
+- READ COMMITTED needs row-based binary logging when the binlog is on (MySQL 8 default `binlog_format=ROW`).
+- Postings take a shared lock on the party row (`post_party_entry`); editing a party's opening due locks it FOR UPDATE, so an edit cannot slip in beside an in-flight posting.
+- Posting a stock document (transfer, adjustment, count) or a goods receipt re-checks that its warehouse(s) and products are still active; drafts may have been saved before a deactivation.
 - `created_at` / `updated_at` are stored in the MySQL server time zone (UTC in Docker). "Today" for business dates uses `TIMEZONE` (Asia/Dhaka) in application code.
 - The test suite drops and recreates `bms_test` on every run; it refuses any database whose name doesn't end with `_test`.
 - `/auth/me`, `PUT /auth/me`, `/auth/change-password` and `/auth/logout` require authentication only, not a permission code: every user manages their own account. (Rule 7 lists no permission for this.)
@@ -48,13 +53,14 @@
 - `/inventory/stock` lists existing balance rows (products never stocked in a warehouse don't appear). low_stock = reorder_level > 0 and on_hand <= reorder_level, per warehouse row.
 - Stock documents can't be edited after saving (no update endpoint): fix a draft by cancelling it and creating a new one. "Save draft" then "Post" from the detail page.
 - Physical count "Load system quantities" starts counted = system qty, so users only change what differs; products never stocked in that warehouse can be added manually (system qty 0).
-- PO header discount is bill-only (decided with the user): stock is valued at gross line cost; the discount only reduces the supplier credit. Each receipt carries round(discount x received-at-PO-cost / subtotal, 2); the receipt completing the PO takes the remainder. A return debits its gross value minus the same proportion of its receipt's discount.
+- PO header discount is bill-only (decided with the user): stock is valued at gross line cost; the discount only reduces the supplier credit. Each receipt carries round(discount x received-at-PO-cost / subtotal, 2); the receipt completing the PO takes the remainder. A return debits its gross value minus the same proportion of its receipt's discount; the return completing the receipt takes the remainder, so returning everything gives back the whole discount.
 - Receipt unit cost defaults to the PO line cost and may be changed per receipt (decided with the user); stock and supplier credit use the received cost, the discount share uses PO cost.
 - Goods are always received into the PO's warehouse. Returns leave the receipt's warehouse and need free stock there.
 - Direct purchase = a PO created approved and received in full in the same transaction (GRN is_direct). It needs both `purchase_order.create` and `goods_receipt.create`.
 - PO approve requires `purchase_order.edit`; cancel requires `purchase_order.delete` and is only possible before anything is received. Returns don't change the PO status.
 - Drafts are edited from the order list (edit drawer); the detail page handles approve/cancel/receive/return.
 - Money accounts store a running `balance` (locked FOR UPDATE on every change) that always equals SUM(in) - SUM(out) of the ledger; tests and `v_cash_position` check this.
+- A warehouse can only be deactivated when it holds no stock (no on-hand or reserved quantity), like a money account needs a zero balance: stock in an inactive warehouse could not be transferred, sold or counted (WAREHOUSE_HAS_STOCK).
 - An account can only be deactivated with a zero balance. Opening balance is set at creation only (later corrections go through vouchers/transfers).
 - Reversal rows keep the original txn_type with the opposite direction and `reversal_of_id`; party reversals use `<TYPE>_REVERSAL` ref types. Reversing a collection/income needs the money to still be in the account (INSUFFICIENT_FUNDS otherwise). Reverse permission = `<resource>.delete`.
 - Collections may be linked to an invoice (same customer, amount <= invoice outstanding, else OVERPAYMENT); reversing the collection takes the amount off the invoice again. Collections without an invoice may exceed the due (advance).
@@ -67,7 +73,7 @@
 - Delivery takes min(qty, line reserved) from the reservation and the rest from free stock; COGS = average cost at that moment, stored on the delivery line and copied to the invoice line.
 - One invoice per delivery. A delivery posted without an invoice ("create invoice" off) can be invoiced later, in full (`POST /sales/deliveries/{id}/invoice`). Delivering with an invoice needs `invoice.create` as well as `delivery.create`.
 - Invoice outstanding = total - returns (net) + refunds - paid. Status: paid when outstanding <= 0, partial when something was paid, else unpaid.
-- A refund on a sales return can't exceed the return's net total and needs an account; it is money OUT (txn_type REFUND, ref SALES_RETURN) plus a customer debit (SALES_REFUND). Sales returns are not reversible (no requirement).
+- A refund on a sales return can't exceed the return's net total, nor what the customer has overpaid on that invoice after the return (max(0, -outstanding)) - an unpaid invoice gets no refund, the return just reduces the due. It needs an account; it is money OUT (txn_type REFUND, ref SALES_RETURN) plus a customer debit (SALES_REFUND). Sales returns are not reversible (no requirement).
 - Quotations: draft -> sent -> accepted/rejected; edit only in draft; convert from draft, sent or accepted into a new draft sales order (warehouse defaults to the default warehouse).
 - Sales order cancel: draft or confirmed only, never after a delivery; releases all reservations. Confirm needs `sales_order.edit` (audited as "approve"); cancel needs `sales_order.delete`.
 - "Produced" is a manual informational figure (0..ordered) editable while the order is open; it does not affect stock.

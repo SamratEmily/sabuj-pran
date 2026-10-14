@@ -11,48 +11,51 @@ import {
   TruckOutlined,
   UserOutlined,
 } from '@ant-design/icons';
+import { lazy } from 'react';
 import type { ReactNode } from 'react';
 
 import { hasPermission } from '../hooks/usePermission';
-import AuditLogPage from '../pages/admin/AuditLogPage';
-import CompanySettingsPage from '../pages/admin/CompanySettingsPage';
-import DocumentNumberingPage from '../pages/admin/DocumentNumberingPage';
-import RolesPage from '../pages/admin/RolesPage';
-import UsersPage from '../pages/admin/UsersPage';
-import AdjustmentsPage from '../pages/inventory/AdjustmentsPage';
-import CountsPage from '../pages/inventory/CountsPage';
-import CurrentStockPage from '../pages/inventory/CurrentStockPage';
-import StockLedgerPage from '../pages/inventory/StockLedgerPage';
-import TransfersPage from '../pages/inventory/TransfersPage';
-import ApprovalRulesPage from '../pages/approvals/ApprovalRulesPage';
-import ApprovalsPage from '../pages/approvals/ApprovalsPage';
-import DashboardPage from '../pages/dashboard/DashboardPage';
-import AttendancePayrollPage from '../pages/employees/AttendancePayrollPage';
-import EmployeesPage from '../pages/employees/EmployeesPage';
-import GoodsReceiptsPage from '../pages/purchase/GoodsReceiptsPage';
-import InvoicesPage from '../pages/sales/InvoicesPage';
-import QuotationsPage from '../pages/sales/QuotationsPage';
-import SalesOrdersPage from '../pages/sales/SalesOrdersPage';
-import SalesReturnsPage from '../pages/sales/SalesReturnsPage';
-import PurchaseOrdersPage from '../pages/purchase/PurchaseOrdersPage';
-import CategoriesPage from '../pages/master/CategoriesPage';
-import AccountLedgerPage from '../pages/money/AccountLedgerPage';
-import MoneyAccountsPage from '../pages/money/MoneyAccountsPage';
-import {
-  CollectionsPage,
-  ExpensesPage,
-  IncomesPage,
-  MoneyTransfersPage,
-  SupplierPaymentsPage,
-} from '../pages/money/VoucherPage';
-import { ExpenseCategoriesPage, IncomeCategoriesPage } from '../pages/master/NamedListPage';
-import PaymentMethodsPage from '../pages/master/PaymentMethodsPage';
-import PriceListPage from '../pages/master/PriceListPage';
-import ProductsPage from '../pages/master/ProductsPage';
-import UnitsPage from '../pages/master/UnitsPage';
-import WarehousesPage from '../pages/master/WarehousesPage';
-import { CustomersPage, SuppliersPage } from '../pages/parties/PartiesPage';
 import type { PermissionRule } from '../hooks/usePermission';
+
+// Pages load on first visit (keeps the initial bundle small).
+const AuditLogPage = lazy(() => import('../pages/admin/AuditLogPage'));
+const CompanySettingsPage = lazy(() => import('../pages/admin/CompanySettingsPage'));
+const DocumentNumberingPage = lazy(() => import('../pages/admin/DocumentNumberingPage'));
+const RolesPage = lazy(() => import('../pages/admin/RolesPage'));
+const UsersPage = lazy(() => import('../pages/admin/UsersPage'));
+const AdjustmentsPage = lazy(() => import('../pages/inventory/AdjustmentsPage'));
+const CountsPage = lazy(() => import('../pages/inventory/CountsPage'));
+const CurrentStockPage = lazy(() => import('../pages/inventory/CurrentStockPage'));
+const StockLedgerPage = lazy(() => import('../pages/inventory/StockLedgerPage'));
+const TransfersPage = lazy(() => import('../pages/inventory/TransfersPage'));
+const ApprovalRulesPage = lazy(() => import('../pages/approvals/ApprovalRulesPage'));
+const ApprovalsPage = lazy(() => import('../pages/approvals/ApprovalsPage'));
+const DashboardPage = lazy(() => import('../pages/dashboard/DashboardPage'));
+const AttendancePayrollPage = lazy(() => import('../pages/employees/AttendancePayrollPage'));
+const EmployeesPage = lazy(() => import('../pages/employees/EmployeesPage'));
+const GoodsReceiptsPage = lazy(() => import('../pages/purchase/GoodsReceiptsPage'));
+const InvoicesPage = lazy(() => import('../pages/sales/InvoicesPage'));
+const QuotationsPage = lazy(() => import('../pages/sales/QuotationsPage'));
+const SalesOrdersPage = lazy(() => import('../pages/sales/SalesOrdersPage'));
+const SalesReturnsPage = lazy(() => import('../pages/sales/SalesReturnsPage'));
+const PurchaseOrdersPage = lazy(() => import('../pages/purchase/PurchaseOrdersPage'));
+const CategoriesPage = lazy(() => import('../pages/master/CategoriesPage'));
+const AccountLedgerPage = lazy(() => import('../pages/money/AccountLedgerPage'));
+const MoneyAccountsPage = lazy(() => import('../pages/money/MoneyAccountsPage'));
+const CollectionsPage = lazy(() => import('../pages/money/VoucherPage').then((m) => ({ default: m.CollectionsPage })));
+const ExpensesPage = lazy(() => import('../pages/money/VoucherPage').then((m) => ({ default: m.ExpensesPage })));
+const IncomesPage = lazy(() => import('../pages/money/VoucherPage').then((m) => ({ default: m.IncomesPage })));
+const MoneyTransfersPage = lazy(() => import('../pages/money/VoucherPage').then((m) => ({ default: m.MoneyTransfersPage })));
+const SupplierPaymentsPage = lazy(() => import('../pages/money/VoucherPage').then((m) => ({ default: m.SupplierPaymentsPage })));
+const ExpenseCategoriesPage = lazy(() => import('../pages/master/NamedListPage').then((m) => ({ default: m.ExpenseCategoriesPage })));
+const IncomeCategoriesPage = lazy(() => import('../pages/master/NamedListPage').then((m) => ({ default: m.IncomeCategoriesPage })));
+const PaymentMethodsPage = lazy(() => import('../pages/master/PaymentMethodsPage'));
+const PriceListPage = lazy(() => import('../pages/master/PriceListPage'));
+const ProductsPage = lazy(() => import('../pages/master/ProductsPage'));
+const UnitsPage = lazy(() => import('../pages/master/UnitsPage'));
+const WarehousesPage = lazy(() => import('../pages/master/WarehousesPage'));
+const CustomersPage = lazy(() => import('../pages/parties/PartiesPage').then((m) => ({ default: m.CustomersPage })));
+const SuppliersPage = lazy(() => import('../pages/parties/PartiesPage').then((m) => ({ default: m.SuppliersPage })));
 
 /**
  * Single source for the sidebar menu AND the app routes.

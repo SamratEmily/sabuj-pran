@@ -170,6 +170,38 @@ def test_transfer_rolls_back_completely_when_a_line_fails(
     assert balance(db, ids["p2"], ids["wh2"])[0] == D("3")
 
 
+def test_posting_rechecks_master_data_deactivated_after_the_draft(
+    client: TestClient, db: Session, admin: User, ids: dict[str, int]
+) -> None:
+    h = auth_headers(admin)
+    receive(db, admin, ids["p1"], ids["wh1"], "10", "50")
+    draft = client.post(
+        f"{API}/transfers",
+        headers=h,
+        json={
+            "from_warehouse_id": ids["wh1"],
+            "to_warehouse_id": ids["wh2"],
+            "items": [{"product_id": ids["p1"], "qty": "4"}],
+        },
+    ).json()
+    count = client.post(
+        f"{API}/counts",
+        headers=h,
+        json={"warehouse_id": ids["wh1"], "items": [{"product_id": ids["p1"], "counted_qty": "9"}]},
+    ).json()
+    before = stock_rows(db)
+    db.get(Warehouse, ids["wh2"]).is_active = False  # type: ignore[union-attr]
+    db.flush()
+    res = client.post(f"{API}/transfers/{draft['id']}/post", headers=h)
+    assert res.json()["code"] == "INACTIVE_WAREHOUSE"
+
+    db.get(Product, ids["p1"]).is_active = False  # type: ignore[union-attr]
+    db.flush()
+    res = client.post(f"{API}/counts/{count['id']}/post", headers=h)
+    assert res.json()["code"] == "INACTIVE_PRODUCT"
+    assert stock_rows(db) == before
+
+
 def test_transfer_validation(
     client: TestClient, db: Session, admin: User, ids: dict[str, int]
 ) -> None:

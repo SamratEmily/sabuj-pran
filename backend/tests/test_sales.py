@@ -43,6 +43,7 @@ def env(db: Session, admin: User) -> dict[str, int]:
         "cust": cust.id,
         "other": other.id,
         "cash": accounts["Cash in Hand"],
+        "bank": accounts["City Bank"],
     }
 
 
@@ -508,11 +509,65 @@ def test_refund_moves_money_and_debits_customer(
     assert [r["srn_number"] for r in inv["returns"]] == ["SRN-000001"]
 
 
+def test_refund_limited_to_what_the_customer_overpaid(
+    client: TestClient, db: Session, admin: User, env: dict[str, int]
+) -> None:
+    h = auth_headers(admin)
+    inv = _invoiced(client, db, admin, env)
+    p2 = next(i for i in inv["items"] if i["product_id"] == env["p2"])
+    body = {
+        "refund_account_id": env["cash"],
+        "items": [{"invoice_item_id": p2["id"], "qty": "2"}],
+    }
+    # Unpaid invoice: the return only reduces the due; there is nothing to refund.
+    unpaid = client.post(
+        f"{API}/invoices/{inv['id']}/return", headers=h, json=body | {"refund_amount": "1"}
+    )
+    assert unpaid.status_code == 400
+    assert unpaid.json()["code"] == "INVALID_REFUND"
+
+    # Partly paid: 1040 of 1080 paid, returning 72 leaves 32 overpaid.
+    paid = client.post(
+        "/api/v1/money/collections",
+        headers=h,
+        json={
+            "customer_id": env["cust"],
+            "account_id": env["cash"],
+            "amount": "1040",
+            "invoice_id": inv["id"],
+        },
+    )
+    assert paid.status_code == 201, paid.text
+    over = client.post(
+        f"{API}/invoices/{inv['id']}/return", headers=h, json=body | {"refund_amount": "33"}
+    )
+    assert over.json()["code"] == "INVALID_REFUND"
+    res = client.post(
+        f"{API}/invoices/{inv['id']}/return", headers=h, json=body | {"refund_amount": "32"}
+    )
+    assert res.status_code == 201, res.text
+    inv = client.get(f"{API}/invoices/{inv['id']}", headers=h).json()
+    assert (inv["status"], inv["outstanding"]) == ("paid", "0.00")
+    assert due(db, env) == D("0.00")
+
+
 def test_refund_without_funds_rolls_back_the_whole_return(
     client: TestClient, db: Session, admin: User, env: dict[str, int]
 ) -> None:
     h = auth_headers(admin)
     inv = _invoiced(client, db, admin, env)
+    # Paid in full into the bank, so a refund is allowed - but cash is empty.
+    paid = client.post(
+        "/api/v1/money/collections",
+        headers=h,
+        json={
+            "customer_id": env["cust"],
+            "account_id": env["bank"],
+            "amount": "1080",
+            "invoice_id": inv["id"],
+        },
+    )
+    assert paid.status_code == 201, paid.text
     before = counts(db), stock(db, env, "p2")
     p2 = next(i for i in inv["items"] if i["product_id"] == env["p2"])
     res = client.post(
@@ -529,7 +584,7 @@ def test_refund_without_funds_rolls_back_the_whole_return(
     inv = client.get(f"{API}/invoices/{inv['id']}", headers=h).json()
     assert inv["returned_amount"] == "0.00"
     assert all(i["qty_returned"] == "0.000" for i in inv["items"])
-    assert due(db, env) == D("1080.00")
+    assert due(db, env) == D("0.00")
 
 
 # --- edit / cancel rules ---------------------------------------------------------------

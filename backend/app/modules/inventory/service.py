@@ -530,6 +530,13 @@ def _active_products(db: Session, product_ids: list[int]) -> dict[int, Product]:
     return products
 
 
+def _check_still_active(db: Session, warehouse_ids: Iterable[int], items: Iterable[Any]) -> None:
+    """Drafts are validated when saved; master data may be deactivated before posting."""
+    for warehouse_id in warehouse_ids:
+        _active_warehouse(db, warehouse_id)
+    _active_products(db, [i.product_id for i in items])
+
+
 def _lock_document(db: Session, model: Any, doc_id: int, label: str) -> Any:
     doc = db.scalar(
         select(model)
@@ -630,6 +637,7 @@ def post_transfer(
     with atomic(db):
         doc = _lock_document(db, StockTransfer, transfer_id, "Transfer")
         _ensure_status(doc, (DRAFT,), "post")
+        _check_still_active(db, (doc.from_warehouse_id, doc.to_warehouse_id), doc.items)
         keys = [
             (i.product_id, w)
             for i in doc.items
@@ -738,6 +746,7 @@ def finalize_adjustment(
     with atomic(db):
         doc = _lock_document(db, StockAdjustment, adjustment_id, "Adjustment")
         _ensure_status(doc, allowed, "post")
+        _check_still_active(db, (doc.warehouse_id,), doc.items)
         balances = _lock_balances(db, [(i.product_id, doc.warehouse_id) for i in doc.items])
         products = {
             p.id: p
@@ -925,6 +934,7 @@ def post_count(
     with atomic(db):
         doc = _lock_document(db, StockCount, count_id, "Count")
         _ensure_status(doc, (DRAFT,), "post")
+        _check_still_active(db, (doc.warehouse_id,), doc.items)
         balances = _lock_balances(db, [(i.product_id, doc.warehouse_id) for i in doc.items])
         products = {
             p.id: p
@@ -1128,7 +1138,13 @@ def stock_ledger(
         .limit(params.page_size)
         .offset(params.offset)
     ).all()
-    users = dict(db.execute(select(User.id, User.full_name)).all()) if page_rows else {}
+    users = dict(
+        db.execute(
+            select(User.id, User.full_name).where(
+                User.id.in_({t.created_by for t, _, _ in page_rows})
+            )
+        ).all()
+    )
     items = [
         {
             "id": t.id,
@@ -1191,25 +1207,61 @@ def document_list(
         stmt = stmt.where(model.number.contains(params.search, autoescape=True))
     total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
     docs = list(db.scalars(stmt.limit(params.page_size).offset(params.offset)))
+    names = _DocNames(db, docs)
     return {
-        "items": [document_detail(db, d) for d in docs],
+        "items": [document_detail(db, d, names) for d in docs],
         "total": total,
         "page": params.page,
         "page_size": params.page_size,
     }
 
 
-def document_detail(db: Session, doc: Any) -> dict[str, Any]:
+class _DocNames:
+    """Names (and, for draft counts, current stock) batch-loaded for a set of documents, so
+    a list page costs a fixed number of queries instead of several per document."""
+
+    def __init__(self, db: Session, docs: list[Any]) -> None:
+        warehouse_ids = [
+            w
+            for d in docs
+            for w in (
+                (d.from_warehouse_id, d.to_warehouse_id)
+                if isinstance(d, StockTransfer)
+                else (d.warehouse_id,)
+            )
+        ]
+        self.warehouses = _names(db, Warehouse, warehouse_ids)
+        self.products = _names(db, Product, [i.product_id for d in docs for i in d.items])
+        self.users = _names(db, User, [u for d in docs for u in (d.created_by, d.posted_by) if u])
+        self.units = _names(db, Unit, [p.unit_id for p in self.products.values()])
+        keys = {
+            (i.product_id, d.warehouse_id)
+            for d in docs
+            if isinstance(d, StockCount) and d.status == DRAFT
+            for i in d.items
+        }
+        self.on_hand: dict[tuple[int, int], Decimal] = {}
+        if keys:
+            rows = db.execute(
+                select(StockBalance.product_id, StockBalance.warehouse_id, StockBalance.qty_on_hand)
+                .where(
+                    StockBalance.product_id.in_({k[0] for k in keys}),
+                    StockBalance.warehouse_id.in_({k[1] for k in keys}),
+                )
+                .execution_options(populate_existing=True)
+            ).all()
+            self.on_hand = {(p, w): q for p, w, q in rows}
+
+
+def document_detail(db: Session, doc: Any, names: _DocNames | None = None) -> dict[str, Any]:
     """Header + items with product/warehouse/user names, as a plain dict for the schemas."""
-    warehouse_ids = (
-        [doc.from_warehouse_id, doc.to_warehouse_id]
-        if isinstance(doc, StockTransfer)
-        else [doc.warehouse_id]
+    names = names or _DocNames(db, [doc])
+    warehouses, products, users, units = (
+        names.warehouses,
+        names.products,
+        names.users,
+        names.units,
     )
-    warehouses = _names(db, Warehouse, warehouse_ids)
-    products = _names(db, Product, [i.product_id for i in doc.items])
-    users = _names(db, User, [u for u in (doc.created_by, doc.posted_by) if u])
-    units = _names(db, Unit, [p.unit_id for p in products.values()])
     header: dict[str, Any] = {
         "id": doc.id,
         "number": doc.number,
@@ -1234,8 +1286,7 @@ def document_detail(db: Session, doc: Any) -> dict[str, Any]:
         if isinstance(doc, StockCount):
             current = None
             if doc.status == DRAFT:
-                bal = get_balance(db, i.product_id, doc.warehouse_id)
-                current = bal.qty_on_hand if bal else ZERO
+                current = names.on_hand.get((i.product_id, doc.warehouse_id), ZERO)
             item |= {
                 "system_qty": i.system_qty,
                 "counted_qty": i.counted_qty,
